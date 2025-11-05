@@ -39,10 +39,17 @@ Thumbs.db
 
 # Logs
 *.log
+logs/
 
 # Environment variables
 .env
 .env.local
+
+# Spark checkpoints and temp
+spark-warehouse/
+metastore_db/
+derby.log
+/tmp/spark_checkpoint/
 
 # Data files
 *.csv

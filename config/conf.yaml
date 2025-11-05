@@ -1,0 +1,266 @@
+# Wikimedia Streaming Project Configuration
+# This file contains all configurable parameters for the streaming pipeline
+
+# =============================================================================
+# INGESTION CONFIGURATION
+# =============================================================================
+ingestion:
+  wikimedia:
+    # Wikimedia EventStream URL
+    url: "https://stream.wikimedia.org/v2/stream/recentchange"
+
+    # User agent for API requests (required by Wikimedia)
+    user_agent: "WikiStreamConsumer/1.0 (Educational Project; Python/3.11)"
+
+    # Retry configuration
+    retry:
+      max_attempts: 3
+      delay_seconds: 5
+      backoff_multiplier: 2
+
+    # Filter configuration
+    filters:
+      # Which Wikipedia namespaces to ingest (0 = main articles)
+      namespaces:
+        - 0
+      # Optional: specific wikis to monitor (empty = all wikis)
+      wikis: []
+      # wikis:
+      #   - "enwiki"
+      #   - "dewiki"
+
+# =============================================================================
+# KAFKA CONFIGURATION
+# =============================================================================
+kafka:
+  # Broker address
+  # Docker: Use service name (kafka:9092)
+  # Local: Use localhost:29092
+  broker: "kafka:9092"
+
+  # Topic configuration
+  topics:
+    wiki_changes: "wiki_changes"
+
+  # Producer settings
+  producer:
+    # Maximum bytes per batch
+    batch_size: 16384
+    # Wait time before sending batch (milliseconds)
+    linger_ms: 10
+    # Compression type: none, gzip, snappy, lz4, zstd
+    compression_type: "snappy"
+    # Maximum in-flight requests per connection
+    max_in_flight_requests: 5
+    # Request timeout (milliseconds)
+    request_timeout_ms: 30000
+    # Acknowledgment level: 0, 1, all
+    acks: "1"
+
+  # Consumer settings (for Spark)
+  consumer:
+    group_id: "spark_streaming_consumer"
+    # What to do when there's no initial offset: earliest, latest
+    auto_offset_reset: "latest"
+    enable_auto_commit: true
+    auto_commit_interval_ms: 5000
+
+  # Topic retention
+  retention:
+    # Retention time (milliseconds) - 7 days default
+    ms: 604800000
+    # Retention size per partition (bytes) - 1GB default
+    bytes: 1073741824
+
+# =============================================================================
+# SPARK STREAMING CONFIGURATION
+# =============================================================================
+spark:
+  # Application name
+  app_name: "WikiStreamProcessor"
+
+  # Kafka source configuration
+  kafka:
+    bootstrap_servers: "localhost:9092"  # When running Spark locally
+    # bootstrap_servers: "kafka:9092"    # When running Spark in Docker
+    subscribe: "wiki_changes"
+    starting_offsets: "latest"
+
+  # Windowing configuration
+  windowing:
+    # Window duration for aggregations
+    duration: "1 minute"
+    # Watermark for late event handling
+    watermark: "2 minutes"
+    # Slide duration (for sliding windows, optional)
+    # slide: "30 seconds"
+
+  # Trigger configuration
+  trigger:
+    # How often to run micro-batches
+    # Options: continuous, once, or time interval
+    processing_time: "30 seconds"
+
+  # Checkpoint configuration
+  checkpoint:
+    # Local path for development
+    location: "/tmp/spark_checkpoint"
+    # Production: use distributed storage
+    # location: "s3a://your-bucket/spark/checkpoints"
+    # location: "hdfs://namenode:9000/spark/checkpoints"
+
+  # Executor configuration (for cluster mode)
+  executor:
+    instances: 2
+    cores: 2
+    memory: "2g"
+
+  # Driver configuration
+  driver:
+    memory: "1g"
+    cores: 1
+
+  # Logging level: ALL, DEBUG, INFO, WARN, ERROR, FATAL, OFF
+  log_level: "WARN"
+
+  # JAR packages (Maven coordinates)
+  jars:
+    packages:
+      - "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0"
+      - "org.postgresql:postgresql:42.6.0"
+
+# =============================================================================
+# POSTGRESQL CONFIGURATION
+# =============================================================================
+postgres:
+  # Connection details
+  host: "postgres"  # Docker service name
+  # host: "localhost"  # When connecting from host machine
+  port: 5432  # Internal Docker port
+  database: "wiki_streaming"
+  user: "wiki_user"
+  # Password should come from environment variable
+  password: "${POSTGRES_PASSWORD}"
+
+  # JDBC URL (constructed from above, or override directly)
+  # jdbc_url: "jdbc:postgresql://postgres:5432/wiki_streaming"
+
+  # Connection pool settings
+  pool:
+    min_size: 2
+    max_size: 10
+    timeout_seconds: 30
+
+  # Write configuration
+  write:
+    # Batch size for bulk inserts
+    batch_size: 1000
+    # Write mode: append, overwrite, ignore, error
+    mode: "append"
+
+  # Data retention policy
+  retention:
+    enabled: false
+    days: 30
+    # Cleanup schedule (cron format)
+    schedule: "0 2 * * *"  # 2 AM daily
+
+# =============================================================================
+# DASHBOARD CONFIGURATION
+# =============================================================================
+dashboard:
+  # Application title
+  title: "Wikipedia Edit Stream Analytics"
+
+  # Server configuration
+  server:
+    port: 8501
+    address: "0.0.0.0"
+
+  # Auto-refresh settings
+  refresh:
+    enabled: true
+    interval_seconds: 30
+
+  # Query configuration
+  queries:
+    # Default time range for queries
+    default_time_range: "1 hour"
+    # Maximum allowed time range
+    max_time_range: "7 days"
+    # Cache TTL (seconds)
+    cache_ttl: 30
+
+  # Layout configuration
+  layout:
+    theme: "light"  # light or dark
+    timezone: "UTC"
+    # Number of top items to show in leaderboards
+    top_n: 10
+
+  # Chart configuration
+  charts:
+    # Default chart height (pixels)
+    height: 400
+    # Color scheme
+    colors:
+      primary: "#1f77b4"
+      secondary: "#ff7f0e"
+      success: "#2ca02c"
+      warning: "#ff9800"
+      danger: "#d62728"
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+logging:
+  # Global log level: DEBUG, INFO, WARN, ERROR
+  level: "INFO"
+
+  # Log format
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+  # Date format
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+  # Component-specific log levels
+  components:
+    ingestion: "INFO"
+    processing: "WARN"
+    dashboard: "INFO"
+
+  # Log output
+  output:
+    console: true
+    file: false
+    # file_path: "/var/log/wiki_streaming/app.log"
+
+# =============================================================================
+# MONITORING & METRICS CONFIGURATION
+# =============================================================================
+monitoring:
+  enabled: false
+
+  # Prometheus metrics endpoint
+  prometheus:
+    enabled: false
+    port: 9090
+
+  # Health check endpoint
+  health_check:
+    enabled: true
+    port: 8080
+
+  # Alerting
+  alerts:
+    enabled: false
+    # channels:
+    #   - type: "slack"
+    #     webhook_url: "${SLACK_WEBHOOK_URL}"
+
+# =============================================================================
+# ENVIRONMENT-SPECIFIC OVERRIDES
+# =============================================================================
+# This section can be overridden by environment-specific config files
+# Example: conf.dev.yaml, conf.prod.yaml
+environment: "development"

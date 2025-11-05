@@ -49,8 +49,67 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      # Override config values for Docker network
       KAFKA_BROKER: 'kafka:9092'
-      TOPIC_NAME: 'wiki_changes'
+      ENVIRONMENT: '${ENVIRONMENT:-development}'
+      # Database credentials from .env
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-wiki_password}'
+    volumes:
+      # Mount config directory (read-only)
+      - ../config:/app/config:ro
+      # Mount common utilities
+      - ../common:/app/common:ro
+    networks:
+      - wiki-network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    hostname: postgres
+    container_name: postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: '${POSTGRES_DB:-wiki_streaming}'
+      POSTGRES_USER: '${POSTGRES_USER:-wiki_user}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-wiki_password}'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - wiki-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wiki_user} -d ${POSTGRES_DB:-wiki_streaming}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Spark Streaming Processor
+  spark-processor:
+    build:
+      context: ../processing
+      dockerfile: Dockerfile
+    container_name: spark-processor
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      # Override config for Docker network
+      KAFKA_BOOTSTRAP_SERVERS: 'kafka:9092'
+      POSTGRES_HOST: 'postgres'
+      POSTGRES_PORT: '5432'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-wiki_password}'
+      ENVIRONMENT: '${ENVIRONMENT:-development}'
+    volumes:
+      # Mount config directory (read-only)
+      - ../config:/app/config:ro
+      # Mount common utilities
+      - ../common:/app/common:ro
+      # Persist Spark checkpoints
+      - spark_checkpoints:/tmp/spark_checkpoint
     networks:
       - wiki-network
     restart: unless-stopped
@@ -58,3 +117,7 @@ services:
 networks:
   wiki-network:
     driver: bridge
+
+volumes:
+  postgres_data:
+  spark_checkpoints:
