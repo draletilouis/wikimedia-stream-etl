@@ -114,6 +114,33 @@ services:
       - wiki-network
     restart: unless-stopped
 
+  # Streamlit Dashboard
+  dashboard:
+    build:
+      context: ../dashboard
+      dockerfile: Dockerfile
+    container_name: dashboard
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    environment:
+      # Override config for Docker network
+      POSTGRES_HOST: 'postgres'
+      POSTGRES_PORT: '5432'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-wiki_password}'
+      ENVIRONMENT: '${ENVIRONMENT:-development}'
+      DOCKER_ENV: 'true'
+    volumes:
+      # Mount config directory (read-only)
+      - ../config:/app/config:ro
+      # Mount common utilities
+      - ../common:/app/common:ro
+    networks:
+      - wiki-network
+    restart: unless-stopped
+
 networks:
   wiki-network:
     driver: bridge

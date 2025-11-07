@@ -19,19 +19,55 @@ Wikipedia SSE Stream → Kafka → Spark Streaming → PostgreSQL → Streamlit 
 
 ## Features
 
-- ✅ Real-time Wikipedia edit stream ingestion
-- ✅ Distributed message buffering with Kafka
-- ✅ Windowed aggregations with Apache Spark
-- ✅ Time-series data storage in PostgreSQL
-- ✅ Configuration-driven (no hardcoded values)
-- ✅ Docker Compose for easy deployment
-- ✅ Scalable and production-ready
+- Real-time Wikipedia edit stream ingestion
+- Distributed message buffering with Kafka
+- Windowed aggregations with Apache Spark (1-minute tumbling windows)
+- Time-series data storage in PostgreSQL
+- Interactive Streamlit dashboard with auto-refresh
+- Configuration-driven (no hardcoded values)
+- Docker Compose for easy deployment
+- Complete observability with real-time metrics
+- CSV export functionality for raw data
+- Scalable and production-ready architecture
+
+## Dashboard
+
+The Streamlit dashboard provides real-time visualization of Wikipedia edit activity with the following features:
+
+### Key Metrics Dashboard
+![Dashboard Overview](docs/images/dashboard-overview.png)
+
+The main dashboard displays:
+- **Total Edits**: Aggregate count of all edits in the last hour
+- **Unique Users**: Number of distinct Wikipedia editors
+- **Avg Edits/Window**: Average edits per 1-minute window
+- **Peak Edits**: Maximum edits by a single user in one window
+- **Timeline Chart**: Real-time visualization of edit activity over the selected time range
+
+### Top Editors and Recent Activity
+![Top Editors and Activity](docs/images/dashboard-editors.png)
+
+The dashboard shows:
+- **Top Editors**: Horizontal bar chart of most active users with configurable top N (5-50)
+- **Recent Activity Windows**: Table showing the most recent processing windows
+- **High-Volume Editors**: List of users with highest edit counts in recent windows
+
+### Raw Data View
+![Raw Data Export](docs/images/dashboard-raw-data.png)
+
+Additional features:
+- **Expandable Raw Data Table**: View all aggregated edits with full details
+- **CSV Export**: Download button to export data for external analysis
+- **Auto-Refresh**: Dashboard updates every 30 seconds automatically
+- **Time Window Selection**: Choose from 15, 30, 60, 120, or 240-minute views
+
+The dashboard is accessible at `http://localhost:8501` once the Docker services are running.
 
 ## Prerequisites
 
 - Docker & Docker Compose
 - Python 3.11+ (for local development)
-- 4GB RAM minimum
+- 8GB RAM minimum (recommended for Spark processing)
 - Port availability: 2181, 9092, 29092, 5433, 8501
 
 ## Quick Start
@@ -57,85 +93,102 @@ docker-compose up -d
 ```
 
 This starts:
-- Zookeeper (Kafka dependency)
-- Kafka broker
-- PostgreSQL database
+- Zookeeper (Kafka dependency) - port 2181
+- Kafka broker - ports 9092, 29092
+- PostgreSQL database - port 5433
 - Wiki consumer (ingestion service)
+- Spark processor (stream processing)
+- Streamlit dashboard - port 8501
 
-### 3. Run Spark Streaming Job
+### 3. Monitor the Pipeline
 
-```bash
-cd processing
-pip install -r requirements.txt
-python spark_streaming_job.py
-```
-
-You should see logs like:
-```
-Configuration loaded successfully
-Starting Kafka stream reader...
-Batch 0: Wrote 25 rows to PostgreSQL
-```
-
-### 4. Verify Data
+All services start automatically. Check their status:
 
 ```bash
-# Check Kafka has messages
-docker exec -it kafka kafka-console-consumer \
-  --bootstrap-server localhost:9092 \
-  --topic wiki_changes \
-  --from-beginning \
-  --max-messages 5
-
-# Check PostgreSQL has data
-docker exec -it postgres psql -U wiki_user -d wiki_streaming \
-  -c "SELECT * FROM user_edit_counts ORDER BY window_start DESC LIMIT 10;"
+docker-compose ps
 ```
 
-### 5. View Dashboard (Coming Soon)
+You should see all services as "Up" and "healthy" (for Kafka, PostgreSQL, and dashboard).
+
+View logs:
+```bash
+# Wiki consumer ingestion
+docker logs wiki-consumer --tail 20
+
+# Spark processing
+docker logs spark-processor --tail 50
+
+# Dashboard
+docker logs dashboard --tail 20
+```
+
+### 4. Verify Data Flow
+
+Check that data is flowing through the pipeline:
 
 ```bash
-cd dashboards
-pip install -r requirements.txt
-streamlit run streamlit_app.py
+# Check wiki-consumer is ingesting events
+docker logs wiki-consumer | grep "Processed"
+# Should show: "Processed X events, sent Y to Kafka"
+
+# Check PostgreSQL has aggregated data
+docker exec postgres psql -U wiki_user -d wiki_streaming \
+  -c "SELECT COUNT(*) FROM user_edit_counts;"
+
+# View sample data
+docker exec postgres psql -U wiki_user -d wiki_streaming \
+  -c "SELECT window_start, user_name, edit_count FROM user_edit_counts ORDER BY window_start DESC LIMIT 10;"
 ```
 
-Open browser to `http://localhost:8501`
+### 5. View Dashboard
+
+The dashboard is included in the Docker Compose setup and starts automatically.
+
+Open your browser to `http://localhost:8501`
+
+The dashboard will display:
+- Real-time key metrics (total edits, unique users, averages)
+- Edit activity timeline chart
+- Top editors leaderboard
+- Recent activity monitoring
+- Raw data export to CSV
 
 ## Project Structure
 
 ```
 wikimedia-streaming-project/
-├── ingestion/              # Data ingestion service
-│   ├── wiki_sse_consumer.py   # Wikimedia → Kafka
+├── common/                    # Shared utilities
+│   └── config_loader.py          # Centralized configuration loader
+│
+├── config/                    # Configuration files
+│   └── conf.yaml                 # Main YAML configuration
+│
+├── ingestion/                 # Data ingestion service
+│   ├── wiki_sse_consumer.py      # Wikipedia SSE → Kafka
+│   ├── requirements.txt
+│   └── Dockerfile
+│
+├── processing/                # Stream processing
+│   ├── spark_streaming_job.py    # Kafka → Spark → PostgreSQL
+│   ├── requirements.txt
+│   └── Dockerfile
+│
+├── dashboard/                 # Visualization layer
+│   ├── streamlit_app.py          # Real-time analytics dashboard
+│   ├── requirements.txt
 │   ├── Dockerfile
-│   └── requirements.txt
-│
-├── processing/             # Spark streaming jobs
-│   ├── spark_streaming_job.py  # Kafka → PostgreSQL
-│   └── requirements.txt
-│
-├── database/               # Database schemas
-│   ├── init.sql              # Table definitions
 │   └── README.md
 │
-├── dashboards/             # Visualization layer
-│   ├── streamlit_app.py      # Dashboard app
-│   └── requirements.txt
+├── sql/                       # Database schemas
+│   └── init.sql                  # PostgreSQL table definitions
 │
-├── config/                 # Configuration files
-│   ├── conf.yaml             # Main configuration
-│   └── README.md             # Config guide
+├── docker/                    # Docker orchestration
+│   └── docker-compose.yml        # Multi-service deployment
 │
-├── common/                 # Shared utilities
-│   └── config_loader.py      # Config loader
+├── docs/                      # Documentation
+│   └── images/                   # Dashboard screenshots
 │
-├── docker/                 # Docker configuration
-│   └── docker-compose.yml    # Service definitions
-│
-├── .env.example            # Environment variables template
-├── .gitignore
-└── README.md               # This file
+└── README.md                  # This file
 ```
 
 ## Configuration
@@ -512,6 +565,8 @@ For questions or issues, please open an issue on GitHub.
 
 ---
 
-**Status:** ✅ Production Ready
+**Status:** Production Ready
 
-**Last Updated:** 2025-11-05
+**Last Updated:** 2025-11-07
+
+**Dashboard:** http://localhost:8501

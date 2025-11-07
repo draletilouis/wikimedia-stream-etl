@@ -49,13 +49,13 @@ kafka:
     # Wait time before sending batch (milliseconds)
     linger_ms: 10
     # Compression type: none, gzip, snappy, lz4, zstd
-    compression_type: "snappy"
+    compression_type: "gzip"
     # Maximum in-flight requests per connection
     max_in_flight_requests: 5
     # Request timeout (milliseconds)
     request_timeout_ms: 30000
     # Acknowledgment level: 0, 1, all
-    acks: "1"
+    acks: 1
 
   # Consumer settings (for Spark)
   consumer:

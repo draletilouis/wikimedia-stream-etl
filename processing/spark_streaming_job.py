@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, window
+from pyspark.sql.functions import from_json, col, window, from_unixtime
 from pyspark.sql.types import StructType, StringType, LongType
 import os
 import sys
@@ -92,8 +92,8 @@ df_parsed = df_raw.selectExpr("CAST(value AS STRING) as json")
 df = df_parsed.select(from_json(col("json"), schema).alias("data")).select("data.*")
 
 # Convert timestamp from Unix seconds to timestamp type
-# Wikipedia timestamps are in seconds, not milliseconds
-df = df.withColumn("timestamp", col("timestamp").cast("timestamp"))
+# Wikipedia timestamps are in seconds, so we use from_unixtime
+df = df.withColumn("timestamp", from_unixtime(col("timestamp")).cast("timestamp"))
 
 # Aggregate: count number of edits per user in configurable windows
 logger.info(f"Setting up aggregations with window={WINDOW_DURATION}, watermark={WATERMARK_DURATION}")
